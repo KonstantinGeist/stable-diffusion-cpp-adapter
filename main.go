@@ -106,17 +106,28 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		log.Printf("Request decode error: %v\n", err)
 		return
 	}
 
 	prompt, imageData, err := extractPromptAndImage(req.Messages)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Prompt/Image extraction error: %v\n", err)
 		return
+	}
+
+	// Log the prompt and image data to stdout
+	fmt.Println("Prompt:", prompt)
+	if len(imageData) > 0 {
+		fmt.Printf("Image Data: %d bytes\n", len(imageData))
+	} else {
+		fmt.Println("Image Data: <none>")
 	}
 
 	if prompt == "" {
 		http.Error(w, "No user prompt provided", http.StatusBadRequest)
+		log.Println("No user prompt provided")
 		return
 	}
 
@@ -198,7 +209,7 @@ func main() {
 	http.HandleFunc("/v1/chat/completions", handleChatCompletion)
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, "OK")
+		_, _ = io.WriteString(w, "OK")
 	})
 	addr := fmt.Sprintf(":%s", port)
 	fmt.Printf("Server running on http://localhost%s\n", addr)
