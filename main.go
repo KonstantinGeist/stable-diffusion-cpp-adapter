@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -195,6 +196,10 @@ func main() {
 	}
 
 	http.HandleFunc("/v1/chat/completions", handleChatCompletion)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "OK")
+	})
 	addr := fmt.Sprintf(":%s", port)
 	fmt.Printf("Server running on http://localhost%s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
