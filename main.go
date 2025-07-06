@@ -104,7 +104,21 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+	// Step 1: Read the body into memory
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+		log.Printf("Body read error: %v\n", err)
+		return
+	}
+
+	// Step 2: Log raw JSON to stdout
+	fmt.Println("Raw JSON request:")
+	fmt.Println(string(bodyBytes))
+
+	// Step 3: Decode into ChatRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		log.Printf("Request decode error: %v\n", err)
 		return
