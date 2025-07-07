@@ -209,7 +209,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(imgData)
-	imgTag := fmt.Sprintf("<img src=\"data:image/png;base64,%s\" />", encoded)
+	imgMarkdown := fmt.Sprintf("![output](data:image/png;base64,%s)", encoded)
 
 	resp := ChatResponse{
 		ID:      "fake-id-123",
@@ -227,7 +227,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 					Content: []ContentPart{
 						{
 							Type: "text",
-							Text: imgTag,
+							Text: imgMarkdown,
 						},
 					},
 				},
