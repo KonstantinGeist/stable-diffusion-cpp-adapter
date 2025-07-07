@@ -67,17 +67,6 @@ type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
 
-type ChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Choices []struct {
-		Index        int     `json:"index"`
-		Message      Message `json:"message"`
-		FinishReason string  `json:"finish_reason"`
-	} `json:"choices"`
-}
-
 var (
 	sdBinPath      string
 	diffusionModel string
@@ -86,7 +75,7 @@ var (
 	t5xxlPath      string
 	port           string
 	mu             sync.Mutex
-	outputDir      = "/home/konstantin.geyst/images"
+	outputDir      string
 )
 
 func init() {
@@ -96,6 +85,7 @@ func init() {
 	flag.StringVar(&clipLPath, "clip_l", "", "Path to CLIP_L file")
 	flag.StringVar(&t5xxlPath, "t5xxl", "", "Path to T5XXL file")
 	flag.StringVar(&port, "port", "8080", "Port to run the web server on")
+	flag.StringVar(&outputDir, "output-dir", "", "Directory to save generated images")
 }
 
 func extractPromptAndImage(messages []Message) (string, []byte, error) {
