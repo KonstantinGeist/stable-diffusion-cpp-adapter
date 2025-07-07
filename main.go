@@ -64,17 +64,6 @@ type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
 
-type ChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Choices []struct {
-		Index        int     `json:"index"`
-		Message      Message `json:"message"`
-		FinishReason string  `json:"finish_reason"`
-	} `json:"choices"`
-}
-
 var (
 	sdBinPath      string
 	diffusionModel string
