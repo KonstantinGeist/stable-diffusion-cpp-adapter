@@ -218,6 +218,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		"-p", prompt,
 		"--cfg-scale", "1.0",
 		"--sampling-method", "euler",
+		"--seed", "-1",
 		"-v",
 	}
 
