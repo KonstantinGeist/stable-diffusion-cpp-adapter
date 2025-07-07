@@ -8,9 +8,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +66,17 @@ type ChatRequest struct {
 	Messages []Message `json:"messages"`
 }
 
+type ChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Choices []struct {
+		Index        int     `json:"index"`
+		Message      Message `json:"message"`
+		FinishReason string  `json:"finish_reason"`
+	} `json:"choices"`
+}
+
 var (
 	sdBinPath      string
 	diffusionModel string
@@ -85,34 +98,76 @@ func init() {
 }
 
 func extractPromptAndImage(messages []Message) (string, []byte, error) {
-	var prompt string
-	var imageData []byte
+	var lastText string
+	var lastImageData []byte
+	var lastImageURL string
+	imagePattern := regexp.MustCompile(`(?:https?:\/\/\S+|\b\/[^ \n\t\r]+)\.png\b`)
 
 	for _, msg := range messages {
-		if msg.Role != "user" {
-			continue
-		}
 		for _, part := range msg.Content {
 			switch part.Type {
 			case "text":
-				prompt += part.Text + " "
+				if msg.Role == "user" {
+					lastText = part.Text
+				}
+
+				// Search for .png URL in text
+				matches := imagePattern.FindAllString(part.Text, -1)
+				if len(matches) > 0 {
+					lastImageURL = matches[len(matches)-1]
+				}
+
 			case "image_url":
-				if part.ImageURL != nil && strings.HasPrefix(part.ImageURL.URL, "data:image/") {
-					idx := strings.Index(part.ImageURL.URL, "base64,")
-					if idx == -1 {
-						continue
+				if part.ImageURL != nil {
+					urlStr := part.ImageURL.URL
+
+					if strings.HasPrefix(urlStr, "data:image/") {
+						idx := strings.Index(urlStr, "base64,")
+						if idx == -1 {
+							continue
+						}
+						raw := urlStr[idx+len("base64,"):]
+						data, err := base64.StdEncoding.DecodeString(raw)
+						if err != nil {
+							log.Printf("Invalid base64 image skipped: %v", err)
+							continue
+						}
+						lastImageData = data
+					} else if strings.HasSuffix(urlStr, ".png") {
+						lastImageURL = urlStr
 					}
-					raw := part.ImageURL.URL[idx+len("base64,"):]
-					data, err := base64.StdEncoding.DecodeString(raw)
-					if err != nil {
-						return "", nil, fmt.Errorf("invalid base64 image: %w", err)
-					}
-					imageData = data
 				}
 			}
 		}
 	}
-	return strings.TrimSpace(prompt), imageData, nil
+
+	// If no image data was found, but a URL/relative path was:
+	if len(lastImageData) == 0 && lastImageURL != "" {
+		finalURL := lastImageURL
+		if strings.HasPrefix(finalURL, "/") {
+			finalURL = "https://web.ai.ispring.lan" + finalURL
+		}
+		// Validate URL
+		if u, err := url.Parse(finalURL); err == nil && u.Scheme != "" {
+			resp, err := http.Get(finalURL)
+			if err != nil {
+				return strings.TrimSpace(lastText), nil, fmt.Errorf("failed to fetch image from URL: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return strings.TrimSpace(lastText), nil, fmt.Errorf("image URL returned status: %s", resp.Status)
+			}
+
+			imgData, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return strings.TrimSpace(lastText), nil, fmt.Errorf("failed to read image data from response: %w", err)
+			}
+			lastImageData = imgData
+		}
+	}
+
+	return strings.TrimSpace(lastText), lastImageData, nil
 }
 
 func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +260,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imageURL := filepath.Base(outputPath) // e.g., output_123456.png
-	imgMarkdown := fmt.Sprintf("![output](/images/%s)", imageURL)
+	imgMarkdown := fmt.Sprintf("![output](/generated/%s)", imageURL)
 
 	response := map[string]interface{}{
 		"id":      "chatcmpl-mockid",
