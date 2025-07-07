@@ -219,6 +219,10 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		"--cfg-scale", "1.0",
 		"--sampling-method", "euler",
 		"--seed", "-1",
+		"--diffusion-fa",
+		"--height", "1024",
+		"--width", "1024",
+		"--steps", "30",
 		"-v",
 	}
 
