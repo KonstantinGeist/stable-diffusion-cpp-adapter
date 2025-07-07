@@ -76,6 +76,7 @@ var (
 	port           string
 	mu             sync.Mutex
 	outputDir      string
+	imageURLPrefix string
 )
 
 func init() {
@@ -86,6 +87,7 @@ func init() {
 	flag.StringVar(&t5xxlPath, "t5xxl", "", "Path to T5XXL file")
 	flag.StringVar(&port, "port", "8080", "Port to run the web server on")
 	flag.StringVar(&outputDir, "output-dir", "", "Directory to save generated images")
+	flag.StringVar(&imageURLPrefix, "image-url-prefix", "", "Image URL prefix")
 }
 
 func extractPromptAndImage(messages []Message) (string, []byte, error) {
@@ -136,7 +138,7 @@ func extractPromptAndImage(messages []Message) (string, []byte, error) {
 	if len(lastImageData) == 0 && lastImageURL != "" {
 		finalURL := lastImageURL
 		if strings.HasPrefix(finalURL, "/") {
-			finalURL = "https://web.ai.ispring.lan/generated" + finalURL
+			finalURL = imageURLPrefix + finalURL
 		}
 		// Validate URL
 		if u, err := url.Parse(finalURL); err == nil && u.Scheme != "" {
