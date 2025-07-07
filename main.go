@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -145,11 +146,17 @@ func extractPromptAndImage(messages []Message) (string, []byte, error) {
 	if len(lastImageData) == 0 && lastImageURL != "" {
 		finalURL := lastImageURL
 		if strings.HasPrefix(finalURL, "/") {
-			finalURL = "https://web.ai.ispring.lan" + finalURL
+			finalURL = "https://web.ai.ispring.lan/generated" + finalURL
 		}
 		// Validate URL
 		if u, err := url.Parse(finalURL); err == nil && u.Scheme != "" {
-			resp, err := http.Get(finalURL)
+			// Custom client that skips cert verification
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{Transport: tr}
+
+			resp, err := client.Get(finalURL)
 			if err != nil {
 				return strings.TrimSpace(lastText), nil, fmt.Errorf("failed to fetch image from URL: %w", err)
 			}
