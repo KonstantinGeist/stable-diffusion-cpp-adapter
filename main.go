@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,6 @@ type Message struct {
 	Content []ContentPart `json:"content"`
 }
 
-// Custom unmarshaller to support both string and []ContentPart
 func (m *Message) UnmarshalJSON(data []byte) error {
 	type Alias Message
 	aux := &struct {
@@ -44,14 +44,12 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Try structured content
 	var parts []ContentPart
 	if err := json.Unmarshal(aux.Content, &parts); err == nil {
 		m.Content = parts
 		return nil
 	}
 
-	// Fallback: plain string
 	var text string
 	if err := json.Unmarshal(aux.Content, &text); err == nil {
 		m.Content = []ContentPart{{Type: "text", Text: text}}
@@ -85,6 +83,7 @@ var (
 	t5xxlPath      string
 	port           string
 	mu             sync.Mutex
+	outputDir      = "/home/konstantin.geyst/images"
 )
 
 func init() {
@@ -133,7 +132,6 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Read and log the raw JSON request
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
@@ -171,7 +169,6 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build args
 	args := []string{
 		"--diffusion-model", diffusionModel,
 		"--vae", vaePath,
@@ -202,42 +199,54 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	outputPath := filepath.Join(outputDir, fmt.Sprintf("output_%d.png", time.Now().UnixNano()))
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		http.Error(w, "Failed to create output directory", http.StatusInternalServerError)
+		return
+	}
+
 	imgData, err := os.ReadFile("output.png")
 	if err != nil {
 		http.Error(w, "Failed to read output.png", http.StatusInternalServerError)
 		return
 	}
+	if err := os.WriteFile(outputPath, imgData, 0644); err != nil {
+		http.Error(w, "Failed to save generated image", http.StatusInternalServerError)
+		return
+	}
 
-	encoded := base64.StdEncoding.EncodeToString(imgData)
-	imgMarkdown := fmt.Sprintf("![output](data:image/png;base64,%s)", encoded)
+	imageURL := filepath.Base(outputPath) // e.g., output_123456.png
+	imgMarkdown := fmt.Sprintf("![output](/images/%s)", imageURL)
 
-	resp := ChatResponse{
-		ID:      "fake-id-123",
-		Object:  "chat.completion",
-		Created: time.Now().Unix(),
-		Choices: []struct {
-			Index        int     `json:"index"`
-			Message      Message `json:"message"`
-			FinishReason string  `json:"finish_reason"`
-		}{
+	response := map[string]interface{}{
+		"id":      "chatcmpl-mockid",
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
+		"model":   req.Model,
+		"choices": []map[string]interface{}{
 			{
-				Index: 0,
-				Message: Message{
-					Role: "assistant",
-					Content: []ContentPart{
-						{
-							Type: "text",
-							Text: imgMarkdown,
-						},
-					},
+				"index": 0,
+				"message": map[string]string{
+					"role":    "assistant",
+					"content": imgMarkdown,
 				},
-				FinishReason: "stop",
+				"finish_reason": "stop",
 			},
 		},
 	}
 
+	respBytes, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Println("Response JSON:")
+	fmt.Println(string(respBytes))
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Write(respBytes)
 }
 
 func main() {
