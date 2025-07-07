@@ -30,6 +30,37 @@ type Message struct {
 	Content []ContentPart `json:"content"`
 }
 
+// Custom unmarshaller to support both string and []ContentPart
+func (m *Message) UnmarshalJSON(data []byte) error {
+	type Alias Message
+	aux := &struct {
+		Content json.RawMessage `json:"content"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Try structured content
+	var parts []ContentPart
+	if err := json.Unmarshal(aux.Content, &parts); err == nil {
+		m.Content = parts
+		return nil
+	}
+
+	// Fallback: plain string
+	var text string
+	if err := json.Unmarshal(aux.Content, &text); err == nil {
+		m.Content = []ContentPart{{Type: "text", Text: text}}
+		return nil
+	}
+
+	return fmt.Errorf("invalid content format in Message")
+}
+
 type ChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
@@ -79,12 +110,11 @@ func extractPromptAndImage(messages []Message) (string, []byte, error) {
 				prompt += part.Text + " "
 			case "image_url":
 				if part.ImageURL != nil && strings.HasPrefix(part.ImageURL.URL, "data:image/") {
-					base64Data := part.ImageURL.URL
-					idx := strings.Index(base64Data, "base64,")
+					idx := strings.Index(part.ImageURL.URL, "base64,")
 					if idx == -1 {
 						continue
 					}
-					raw := base64Data[idx+len("base64,"):]
+					raw := part.ImageURL.URL[idx+len("base64,"):]
 					data, err := base64.StdEncoding.DecodeString(raw)
 					if err != nil {
 						return "", nil, fmt.Errorf("invalid base64 image: %w", err)
@@ -103,9 +133,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var req ChatRequest
-
-	// Step 1: Read the body into memory
+	// Read and log the raw JSON request
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
@@ -113,11 +141,10 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 2: Log raw JSON to stdout
 	fmt.Println("Raw JSON request:")
 	fmt.Println(string(bodyBytes))
 
-	// Step 3: Decode into ChatRequest
+	var req ChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		log.Printf("Request decode error: %v\n", err)
@@ -131,7 +158,6 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the prompt and image data to stdout
 	fmt.Println("Prompt:", prompt)
 	if len(imageData) > 0 {
 		fmt.Printf("Image Data: %d bytes\n", len(imageData))
@@ -145,6 +171,7 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build args
 	args := []string{
 		"--diffusion-model", diffusionModel,
 		"--vae", vaePath,
@@ -225,6 +252,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "OK")
 	})
+
 	addr := fmt.Sprintf(":%s", port)
 	fmt.Printf("Server running on http://localhost%s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
